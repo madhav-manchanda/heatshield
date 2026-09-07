@@ -14,9 +14,7 @@ function formatTime(value) {
   return Number.isNaN(date.getTime()) ? String(value).slice(11, 16) : date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
 }
 
-function formatUpdated(value) {
-  return `Updated ${formatTime(value)} IST`;
-}
+function formatUpdated(value) { return `Updated ${formatTime(value)} IST`; }
 
 function riskClass(level) {
   if (level === 'extreme') return 'bg-error-container text-on-error-container';
@@ -38,14 +36,16 @@ function mountLivePanel(title, subtitle, html) {
   panel.id = 'heatshield-live-panel';
   panel.className = 'max-w-7xl w-full mx-auto px-space-md pb-space-lg';
   panel.innerHTML = `<div class="bg-surface-container-lowest rounded-xl shadow-sm border border-surface-container-high overflow-hidden"><div class="p-space-md border-b border-surface-container-high flex items-center justify-between gap-space-sm"><div><div class="font-headline-sm text-headline-sm font-semibold text-on-surface">${title}</div><div class="font-label-sm text-label-sm text-on-surface-variant mt-1">${subtitle}</div></div><span class="px-space-xs py-1 rounded-full bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm font-semibold">LIVE</span></div><div class="p-space-md">${html}</div></div>`;
-  const container = document.getElementById('app-content');
-  container.appendChild(panel);
-  return panel;
+  document.getElementById('app-content').appendChild(panel);
 }
 
 export async function loadLiveDashboard(locationId = 1) {
   try {
-    const data = await get(`/api/live/overview?location_id=${locationId}`);
+    const [data, facilities, alerts] = await Promise.all([
+      get(`/api/live/overview?location_id=${locationId}`),
+      get('/api/live/facilities'),
+      get('/api/live/alerts'),
+    ]);
     const current = data.current;
     replaceTextEverywhere('REST Mock Stream', 'LIVE • Open-Meteo');
     replaceTextEverywhere('38.4°C', `${Number(current.temperature).toFixed(1)}°C`);
@@ -57,8 +57,10 @@ export async function loadLiveDashboard(locationId = 1) {
     replaceTextEverywhere('Updated 4 min ago', formatUpdated(data.updated_at));
     replaceTextEverywhere('Target Area: Delhi Central & East Sectors', `Target Area: ${data.location.name}`);
 
-    const rows = data.forecast.filter((_, i) => i % 3 === 0).slice(0, 24).map(item => `<tr class="border-t border-surface-container-high"><td class="py-2 font-label-sm">${formatTime(item.timestamp)}</td><td class="py-2 font-semibold">${Number(item.temperature).toFixed(1)}°C</td><td class="py-2">${Math.round(item.humidity)}%</td><td class="py-2">${Number(item.apparent_temperature).toFixed(1)}°C</td><td class="py-2">${Number(item.thermal_score).toFixed(0)}</td><td class="py-2"><span class="px-2 py-1 rounded-full ${riskClass(item.risk_level)} font-label-sm">${item.risk_level}</span></td></tr>`).join('');
-    mountLivePanel('Live 5-Day Forecast & Thermal Stress', `${data.location.name} • ${data.source} • ${formatUpdated(data.updated_at)}`, `<div class="overflow-x-auto"><table class="w-full text-left"><thead><tr class="text-on-surface-variant font-label-sm"><th class="py-2">Time</th><th>Temp</th><th>Humidity</th><th>Feels Like</th><th>Thermal</th><th>Risk</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+    const forecastRows = data.forecast.filter((_, i) => i % 3 === 0).slice(0, 24).map(item => `<tr class="border-t border-surface-container-high"><td class="py-2 font-label-sm">${formatTime(item.timestamp)}</td><td class="py-2 font-semibold">${Number(item.temperature).toFixed(1)}°C</td><td class="py-2">${Math.round(item.humidity)}%</td><td class="py-2">${Number(item.apparent_temperature).toFixed(1)}°C</td><td class="py-2">${Number(item.thermal_score).toFixed(0)}</td><td class="py-2"><span class="px-2 py-1 rounded-full ${riskClass(item.risk_level)} font-label-sm">${item.risk_level}</span></td></tr>`).join('');
+    const facilityCards = facilities.facilities.map(item => `<div class="p-3 rounded-lg bg-surface-container-low border border-surface-container-high"><div class="flex justify-between gap-2"><strong>${item.name}</strong><span class="text-xs font-semibold ${item.status === 'full' ? 'text-error' : 'text-primary'}">${item.status.toUpperCase()}</span></div><div class="mt-2 text-sm text-on-surface-variant">${item.occupancy}/${item.capacity} occupied • ${item.available} available</div></div>`).join('');
+    const alertRows = alerts.alerts.map(item => `<div class="p-3 rounded-lg ${riskClass(item.severity)}"><div class="flex justify-between gap-2"><strong>${item.severity.toUpperCase()} • ${item.location}</strong><span class="text-xs">${formatTime(item.created_at)}</span></div><div class="mt-1 text-sm">${item.message}</div></div>`).join('');
+    mountLivePanel('Live Forecast, Facilities & Alerts', `${data.location.name} • ${data.source} • ${formatUpdated(data.updated_at)}`, `<div class="overflow-x-auto"><table class="w-full text-left"><thead><tr class="text-on-surface-variant font-label-sm"><th class="py-2">Time</th><th>Temp</th><th>Humidity</th><th>Feels Like</th><th>Thermal</th><th>Risk</th></tr></thead><tbody>${forecastRows}</tbody></table></div><div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6"><div><div class="font-semibold mb-2">Cooling / Relief Facilities</div><div class="grid gap-2">${facilityCards}</div></div><div><div class="font-semibold mb-2">Active Live Alerts</div><div class="grid gap-2">${alertRows}</div></div></div>`);
     document.documentElement.dataset.liveWeather = 'connected';
     return data;
   } catch (error) {
@@ -68,10 +70,7 @@ export async function loadLiveDashboard(locationId = 1) {
   }
 }
 
-export async function loadLiveRiskMap() {
-  const data = await get('/api/live/risk-map');
-  return data;
-}
+export async function loadLiveRiskMap() { return get('/api/live/risk-map'); }
 
 export async function loadLiveRoute(route) {
   if (route === 'dashboard') return loadLiveDashboard(1);
@@ -94,19 +93,16 @@ export async function loadLiveRoute(route) {
       const buttons = actions.map(action => `<button data-intervention="${action}" class="px-3 py-2 rounded-lg bg-surface-container-low hover:bg-primary-container hover:text-on-primary border border-surface-container-high text-sm font-medium">${action[0].toUpperCase() + action.slice(1)}</button>`).join('');
       mountLivePanel('Live What-If Heat Intervention', `${data.location.name} • baseline derived from current weather`, `<div class="grid grid-cols-1 md:grid-cols-3 gap-3"><div class="p-4 rounded-lg bg-surface-container-low"><div class="text-xs text-on-surface-variant">Current Risk</div><div class="text-3xl font-bold mt-1">${data.baseline.final_score}</div><div class="text-sm mt-1">${data.baseline.risk_level}</div></div><div class="p-4 rounded-lg bg-surface-container-low"><div class="text-xs text-on-surface-variant">Try interventions</div><div class="flex flex-wrap gap-2 mt-3">${buttons}</div></div><div class="p-4 rounded-lg bg-surface-container-low"><div class="text-xs text-on-surface-variant">Projected</div><div id="live-projected-score" class="text-3xl font-bold mt-1">${data.projected_score}</div><div id="live-projected-level" class="text-sm mt-1">${data.projected_level}</div></div></div>`);
       document.querySelectorAll('[data-intervention]').forEach(button => button.addEventListener('click', async () => {
+        button.classList.toggle('bg-primary-container'); button.classList.toggle('text-on-primary');
         const params = new URLSearchParams({ location_id: '1' });
         document.querySelectorAll('[data-intervention]').forEach(b => { if (b.classList.contains('bg-primary-container')) params.set(b.dataset.intervention, 'true'); });
-        params.set(button.dataset.intervention, 'true');
         const next = await get(`/api/live/interventions?${params}`);
-        button.classList.toggle('bg-primary-container'); button.classList.toggle('text-on-primary');
         document.getElementById('live-projected-score').textContent = next.projected_score;
         document.getElementById('live-projected-level').textContent = next.projected_level;
       }));
       return data;
     }
-  } catch (error) {
-    console.warn(`HeatShield live ${route} data unavailable:`, error);
-  }
+  } catch (error) { console.warn(`HeatShield live ${route} data unavailable:`, error); }
   return null;
 }
 
