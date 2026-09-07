@@ -38,6 +38,17 @@ function updateSidebar(route) {
   });
 }
 
+function polishLivePanelHeader() {
+  const status = document.getElementById('connection-status')?.dataset.status;
+  if (status !== 'live') return;
+
+  const body = document.querySelector('#heatshield-live-panel .heatshield-panel-body');
+  const subtitle = body?.previousElementSibling?.querySelector('.mt-1');
+  if (subtitle) {
+    subtitle.textContent = 'Live municipal heat intelligence • refreshed from HeatShield backend';
+  }
+}
+
 async function loadLocations() {
   const select = document.getElementById('location-select');
   if (!select) return;
@@ -70,6 +81,7 @@ async function navigate() {
   if (renderer) renderer(container);
   updateSidebar(route);
   await loadLiveRoute(route);
+  polishLivePanelHeader();
 }
 
 window.addEventListener('hashchange', navigate);
@@ -81,6 +93,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (id) {
         locationSelect.dataset.selected = id;
         await setCurrentLocationId(id);
+        polishLivePanelHeader();
       }
     });
   }
@@ -90,5 +103,7 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 setInterval(() => {
-  if (document.visibilityState === 'visible') loadLiveRoute(getRoute());
+  if (document.visibilityState === 'visible') {
+    loadLiveRoute(getRoute()).then(polishLivePanelHeader);
+  }
 }, 300000);
