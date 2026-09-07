@@ -38,10 +38,13 @@ app.include_router(spatial_router)
 def prepare_database():
     with engine.begin() as connection:
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
+        
+    Base.metadata.create_all(bind=engine)
+    
+    with engine.begin() as connection:
         connection.execute(text("ALTER TABLE locations ADD COLUMN IF NOT EXISTS geom geometry(POINT,4326)"))
         connection.execute(text("ALTER TABLE weather ADD COLUMN IF NOT EXISTS apparent_temperature double precision"))
         connection.execute(text("ALTER TABLE facilities ADD COLUMN IF NOT EXISTS geom geometry(POINT,4326)"))
-    Base.metadata.create_all(bind=engine)
 
 
 @app.on_event("startup")

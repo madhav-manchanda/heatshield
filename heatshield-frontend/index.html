@@ -137,19 +137,13 @@
           </div>
         </div>
         <div class="h-6 w-px bg-outline-variant/50 hidden md:block"></div>
-        <button class="hidden lg:flex items-center gap-space-2xs px-space-xs py-space-2xs rounded-full bg-surface-container-low border border-outline-variant/40 hover:bg-surface-container text-on-surface transition-colors" type="button">
-          <span class="material-symbols-outlined text-primary text-[18px]">location_on</span>
-          <span class="font-label-md text-label-md font-medium text-on-surface">North District / Central Ward 37, Delhi NCR</span>
-          <span class="material-symbols-outlined text-on-surface-variant text-[16px]">expand_more</span>
-        </button>
+        <select id="location-select" class="hidden lg:flex items-center gap-space-2xs px-space-xs py-space-2xs rounded-full bg-surface-container-low border border-outline-variant/40 hover:bg-surface-container text-on-surface transition-colors font-label-md text-label-md font-medium focus:outline-none" data-selected="1" disabled>
+          <option value="" disabled selected>Loading locations...</option>
+        </select>
       </div>
       <div class="flex items-center gap-space-sm">
-        <div class="hidden xl:flex items-center gap-space-2xs px-space-xs py-space-2xs rounded-full bg-surface-container-lowest border border-outline-variant/40 shadow-sm">
-          <span class="relative flex h-2 w-2">
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-            <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-          </span>
-          <span class="font-label-sm text-label-sm text-on-surface-variant">Demo Mode • Last synced 3m ago</span>
+        <div id="connection-status" data-status="connecting" class="hidden xl:flex items-center gap-space-2xs px-space-xs py-space-2xs rounded-full bg-surface-container-lowest border border-outline-variant/40 shadow-sm font-label-sm text-label-sm text-on-surface">
+          <span class="w-1.5 h-1.5 rounded-full bg-on-surface-variant animate-pulse inline-block"></span> CONNECTING • HeatShield backend
         </div>
         <div class="hidden sm:flex items-center p-space-2xs rounded-full bg-surface-container-high border border-outline-variant/40">
           <button class="px-space-xs py-space-2xs rounded-full font-label-sm text-label-sm text-on-surface-variant hover:text-on-surface transition-colors" type="button">Citizen</button>
@@ -224,16 +218,9 @@
       </nav>
     </div>
     <div class="px-space-md flex flex-col gap-space-xs border-t border-surface-container-high pt-space-md">
-      <div class="p-space-xs rounded-full bg-surface-container-low flex items-center justify-between">
-        <div class="flex items-center gap-space-2xs">
-          <span class="material-symbols-outlined text-secondary text-[18px]">warning</span>
-          <span class="font-label-sm text-label-sm font-semibold text-secondary">High Heat Index</span>
-        </div>
-        <span class="font-numeric-metric text-label-md font-bold text-on-surface">42.4°C</span>
-      </div>
       <div class="flex items-center justify-between text-on-surface-variant">
-        <span class="font-label-sm text-label-sm">Field Teams Active</span>
-        <span class="font-label-sm text-label-sm font-semibold text-on-surface">14 / 18</span>
+        <span class="font-label-sm text-label-sm">Backend API</span>
+        <span id="sidebar-api-status" class="font-label-sm text-label-sm font-semibold text-on-surface">Connecting...</span>
       </div>
     </div>
   </aside>
