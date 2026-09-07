@@ -64,3 +64,8 @@ window.triggerToast = function(msg) {
 
 window.addEventListener('hashchange', navigate);
 window.addEventListener('DOMContentLoaded', navigate);
+
+// Refresh live data without rebuilding the page every five minutes.
+setInterval(() => {
+  if (document.visibilityState === 'visible') loadLiveRoute(getRoute());
+}, 300000);
