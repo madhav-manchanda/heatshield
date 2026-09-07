@@ -4,6 +4,7 @@ import { renderInterventions } from './pages/interventions.js';
 import { renderFirstResponder } from './pages/first-responder.js';
 import { loadLiveRoute, setCurrentLocationId } from './live.js';
 import { apiGet } from './api.js';
+import { initLocationControls, openLocationPicker } from './location.js';
 
 const routes = {
   'dashboard': renderDashboard,
@@ -41,18 +42,14 @@ function updateSidebar(route) {
 function polishLivePanelHeader() {
   const status = document.getElementById('connection-status')?.dataset.status;
   if (status !== 'live') return;
-
   const body = document.querySelector('#heatshield-live-panel .heatshield-panel-body');
   const subtitle = body?.previousElementSibling?.querySelector('.mt-1');
-  if (subtitle) {
-    subtitle.textContent = 'Live municipal heat intelligence • refreshed from HeatShield backend';
-  }
+  if (subtitle) subtitle.textContent = 'Live municipal heat intelligence • refreshed from HeatShield backend';
 }
 
 async function loadLocations() {
   const select = document.getElementById('location-select');
   if (!select) return;
-
   select.setAttribute('aria-label', 'Delhi monitoring zone');
   select.title = 'Select a monitoring zone within Delhi';
 
@@ -90,6 +87,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (locationSelect) {
     locationSelect.addEventListener('change', async (e) => {
       const id = e.target.value;
+      if (id === '__external__') return;
       if (id) {
         locationSelect.dataset.selected = id;
         await setCurrentLocationId(id);
@@ -98,8 +96,17 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  initLocationControls();
   loadLocations();
   navigate();
+
+  // Offer GPS once when the dashboard first opens; the user must explicitly approve it.
+  setTimeout(() => {
+    if (getRoute() === 'dashboard' && !sessionStorage.getItem('heatshield-location-prompt-seen')) {
+      sessionStorage.setItem('heatshield-location-prompt-seen', '1');
+      openLocationPicker();
+    }
+  }, 1200);
 });
 
 setInterval(() => {
