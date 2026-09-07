@@ -3,7 +3,7 @@ import { renderRiskMap } from './pages/risk-map.js';
 import { renderInterventions } from './pages/interventions.js';
 import { renderFirstResponder } from './pages/first-responder.js';
 import { loadLiveRoute, setCurrentLocationId } from './live.js';
-import { API_BASE, apiGet, formatTimeIST } from './api.js';
+import { apiGet } from './api.js';
 
 const routes = {
   'dashboard': renderDashboard,
@@ -41,14 +41,18 @@ function updateSidebar(route) {
 async function loadLocations() {
   const select = document.getElementById('location-select');
   if (!select) return;
+
+  select.setAttribute('aria-label', 'Delhi monitoring zone');
+  select.title = 'Select a monitoring zone within Delhi';
+
   try {
     const locations = await apiGet('/api/live/locations');
     locationsCache = locations || [];
-    select.innerHTML = '<option value="" disabled>Select location...</option>' +
-      locationsCache.map(loc => `<option value="${loc.id}" ${Number(loc.id) === Number(select.dataset.selected) ? 'selected' : ''}>${loc.name}</option>`).join('');
+    select.innerHTML = '<option value="" disabled>Select Delhi zone...</option>' +
+      locationsCache.map(loc => `<option value="${loc.id}" ${Number(loc.id) === Number(select.dataset.selected) ? 'selected' : ''}>Delhi · ${loc.name}</option>`).join('');
     select.disabled = false;
   } catch (_) {
-    select.innerHTML = '<option value="" disabled selected>Locations unavailable</option>';
+    select.innerHTML = '<option value="" disabled selected>Delhi zones unavailable</option>';
     select.disabled = true;
   }
 }
@@ -70,7 +74,6 @@ async function navigate() {
 
 window.addEventListener('hashchange', navigate);
 window.addEventListener('DOMContentLoaded', () => {
-  // Wire up location selector
   const locationSelect = document.getElementById('location-select');
   if (locationSelect) {
     locationSelect.addEventListener('change', async (e) => {
@@ -81,11 +84,11 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
   loadLocations();
   navigate();
 });
 
-// Refresh live data without rebuilding the page every five minutes.
 setInterval(() => {
   if (document.visibilityState === 'visible') loadLiveRoute(getRoute());
 }, 300000);
