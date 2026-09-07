@@ -2,7 +2,7 @@ import { renderDashboard } from './pages/dashboard.js';
 import { renderRiskMap } from './pages/risk-map.js';
 import { renderInterventions } from './pages/interventions.js';
 import { renderFirstResponder } from './pages/first-responder.js';
-import { loadLiveDashboard } from './live.js';
+import { loadLiveRoute } from './live.js';
 
 const routes = {
   'dashboard': renderDashboard,
@@ -29,11 +29,9 @@ function updateSidebar(route) {
   document.querySelectorAll('#sidebar-nav .nav-link').forEach(link => {
     const page = link.dataset.page;
     const isActive = navPageMap[page] === route || page === route;
-    if (isActive) {
-      link.className = 'nav-link flex items-center gap-space-xs px-space-sm py-space-xs transition-colors bg-primary-container text-on-primary font-medium rounded-full shadow-sm';
-    } else {
-      link.className = 'nav-link flex items-center gap-space-xs px-space-sm py-space-xs rounded-full text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors';
-    }
+    link.className = isActive
+      ? 'nav-link flex items-center gap-space-xs px-space-sm py-space-xs transition-colors bg-primary-container text-on-primary font-medium rounded-full shadow-sm'
+      : 'nav-link flex items-center gap-space-xs px-space-sm py-space-xs rounded-full text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors';
   });
 }
 
@@ -49,11 +47,7 @@ async function navigate() {
 
   if (renderer) renderer(container);
   updateSidebar(route);
-
-  // Keep the existing UI, but hydrate its telemetry with live weather.
-  if (route === 'dashboard') {
-    await loadLiveDashboard(1);
-  }
+  await loadLiveRoute(route);
 }
 
 window.triggerToast = function(msg) {
