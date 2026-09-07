@@ -2,13 +2,18 @@
   html, body {
     margin: 0;
     padding: 0;
+    min-height: 100%;
   }
+
   body {
     overscroll-behavior: none;
+    background: #f8faf8;
   }
+
   main > :first-child {
     margin-top: 0 !important;
   }
+
   main > :last-child {
     margin-bottom: 0 !important;
   }
@@ -26,6 +31,100 @@
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* Initial route loading state */
+.heatshield-page-loading {
+  min-height: 18rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: #6b7473;
+  font-size: 0.875rem;
+}
+
+/* Dashboard visual polish */
+#heatshield-live-panel {
+  padding-top: 0.25rem;
+}
+
+#heatshield-live-panel > div {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.045);
+}
+
+#live-dashboard-content {
+  width: 100%;
+}
+
+#live-dashboard-content .risk-summary,
+#live-dashboard-content .risk-card {
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+#live-dashboard-content .risk-summary:hover,
+#live-dashboard-content .risk-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.06);
+}
+
+#location-select {
+  min-width: 11.5rem;
+  max-width: 15rem;
+  height: 2.25rem;
+  padding-right: 2rem;
+  cursor: pointer;
+  color-scheme: light;
+}
+
+#location-select:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+#location-select:focus-visible {
+  outline: 2px solid #0d7477;
+  outline-offset: 2px;
+}
+
+#connection-status[data-status="live"] {
+  background: rgba(236, 253, 245, 0.85);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+#connection-status[data-status="offline"] {
+  background: rgba(255, 251, 235, 0.9);
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+#connection-status[data-status="error"] {
+  background: rgba(254, 242, 242, 0.9);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+/* Compact, professional metric cards */
+#live-dashboard-content .metric-card {
+  min-height: 7rem;
+}
+
+#live-dashboard-content table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+#live-dashboard-content thead th {
+  white-space: nowrap;
+  font-size: 0.7rem;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+#live-dashboard-content tbody tr {
+  transition: background-color 120ms ease;
+}
+
+#live-dashboard-content tbody tr:hover {
+  background: rgba(13, 116, 119, 0.035);
 }
 
 /* Range slider styling */
@@ -63,4 +162,17 @@ input[type="range"]::-moz-range-thumb {
 /* Checkbox styling */
 input[type="checkbox"] {
   accent-color: #005a5c;
+}
+
+@media (max-width: 1023px) {
+  #location-select {
+    min-width: 10rem;
+  }
+}
+
+@media (max-width: 639px) {
+  #heatshield-live-panel {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
 }
