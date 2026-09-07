@@ -7,19 +7,12 @@ import { apiGet } from './api.js';
 import { initLocationControls, openLocationPicker } from './location.js';
 
 const routes = {
-  'dashboard': renderDashboard,
+  dashboard: renderDashboard,
   'risk-map': renderRiskMap,
-  'interventions': renderInterventions,
+  'forecast-stress': renderDashboard,
+  'cooling-facilities': renderDashboard,
+  interventions: renderInterventions,
   'first-responder': renderFirstResponder,
-};
-
-const navPageMap = {
-  'dashboard': 'dashboard',
-  'risk-map': 'risk-map',
-  'forecast-stress': 'dashboard',
-  'cooling-facilities': 'dashboard',
-  'interventions': 'interventions',
-  'first-responder': 'first-responder',
 };
 
 let locationsCache = [];
@@ -32,7 +25,7 @@ function getRoute() {
 function updateSidebar(route) {
   document.querySelectorAll('#sidebar-nav .nav-link').forEach(link => {
     const page = link.dataset.page;
-    const isActive = navPageMap[page] === route || page === route;
+    const isActive = page === route;
     link.className = isActive
       ? 'nav-link flex items-center gap-space-xs px-space-sm py-space-xs transition-colors bg-primary-container text-on-primary font-medium rounded-full shadow-sm'
       : 'nav-link flex items-center gap-space-xs px-space-sm py-space-xs rounded-full text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors';
@@ -56,6 +49,15 @@ function ensureHeaderLocationActions() {
     </button>`;
 
   select.parentNode.insertBefore(wrapper, select.nextSibling);
+
+  document.getElementById('header-change-location')?.addEventListener('click', () => {
+    openLocationPicker();
+  });
+
+  document.getElementById('header-use-location')?.addEventListener('click', () => {
+    openLocationPicker();
+    setTimeout(() => document.getElementById('location-use-gps')?.click(), 50);
+  });
 }
 
 function polishLivePanelHeader() {
@@ -69,8 +71,9 @@ function polishLivePanelHeader() {
 async function loadLocations() {
   const select = document.getElementById('location-select');
   if (!select) return;
+
   select.setAttribute('aria-label', 'Delhi monitoring zone');
-  select.title = 'Select a monitoring zone within Delhi';
+  select.title = 'Select a configured Delhi monitoring zone';
 
   try {
     const locations = await apiGet('/api/live/locations');
@@ -84,10 +87,110 @@ async function loadLocations() {
   }
 }
 
+function bindNavigation() {
+  document.querySelectorAll('#sidebar-nav .nav-link').forEach(link => {
+    if (link.dataset.bound === 'true') return;
+    link.dataset.bound = 'true';
+    link.addEventListener('click', event => {
+      const page = link.dataset.page;
+      if (!routes[page]) return;
+      event.preventDefault();
+      if (window.location.hash.slice(1) !== page) {
+        window.location.hash = page;
+      } else {
+        navigate();
+      }
+    });
+  });
+}
+
+function bindHeaderUtilityButtons() {
+  const notificationButton = document.querySelector('button[aria-label="Notifications"]');
+  if (notificationButton && notificationButton.dataset.bound !== 'true') {
+    notificationButton.dataset.bound = 'true';
+    notificationButton.addEventListener('click', () => {
+      const alerts = document.querySelector('#heatshield-live-panel');
+      if (alerts) {
+        alerts.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      if (window.location.hash.slice(1) !== 'dashboard') {
+        window.location.hash = 'dashboard';
+      } else {
+        document.getElementById('app-content')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  }
+
+  const settingsButton = document.querySelector('button[aria-label="Settings"]');
+  if (settingsButton && settingsButton.dataset.bound !== 'true') {
+    settingsButton.dataset.bound = 'true';
+    settingsButton.addEventListener('click', openSettingsDialog);
+  }
+
+  document.querySelectorAll('header button[type="button"]').forEach(button => {
+    const label = button.textContent.trim();
+    if (!['Citizen', 'Authority', 'First Responder'].includes(label)) return;
+    if (button.dataset.bound === 'true') return;
+    button.dataset.bound = 'true';
+    button.addEventListener('click', () => {
+      window.location.hash = label === 'First Responder' ? 'first-responder' : 'dashboard';
+    });
+  });
+
+  const profile = document.querySelector('header div.w-8.h-8.rounded-full.bg-primary');
+  if (profile && profile.dataset.bound !== 'true') {
+    profile.dataset.bound = 'true';
+    profile.setAttribute('role', 'button');
+    profile.setAttribute('tabindex', '0');
+    profile.setAttribute('aria-label', 'Profile');
+    profile.title = 'Profile';
+    const open = () => openInfoDialog('Profile', 'HeatShield Authority workspace', 'Profile controls are not connected to an authentication service yet.');
+    profile.addEventListener('click', open);
+    profile.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') open();
+    });
+  }
+}
+
+function openInfoDialog(title, subtitle, message) {
+  closeDialog();
+  const dialog = document.createElement('div');
+  dialog.id = 'heatshield-info-dialog';
+  dialog.className = 'fixed inset-0 z-[90] bg-black/45 backdrop-blur-sm p-4 flex items-center justify-center';
+  dialog.innerHTML = `
+    <div class="w-full max-w-md rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-2xl p-5">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <div class="text-lg font-semibold text-on-surface">${title}</div>
+          <div class="text-xs text-on-surface-variant mt-1">${subtitle}</div>
+        </div>
+        <button id="heatshield-dialog-close" type="button" aria-label="Close dialog" class="w-9 h-9 rounded-full bg-surface-container-low flex items-center justify-center hover:bg-surface-container-high">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <div class="mt-4 p-3 rounded-xl bg-surface-container-low text-sm text-on-surface-variant">${message}</div>
+    </div>`;
+  document.body.appendChild(dialog);
+  dialog.querySelector('#heatshield-dialog-close')?.addEventListener('click', closeDialog);
+  dialog.addEventListener('click', event => {
+    if (event.target === dialog) closeDialog();
+  });
+}
+
+function openSettingsDialog() {
+  openInfoDialog('HeatShield Settings', 'Application status', `Backend API: ${document.getElementById('sidebar-api-status')?.textContent || 'Unknown'} • Location services require explicit browser permission. Live weather is provided by Open-Meteo.`);
+}
+
+function closeDialog() {
+  document.getElementById('heatshield-info-dialog')?.remove();
+}
+
 async function navigate() {
   const route = getRoute();
   const container = document.getElementById('app-content');
   const renderer = routes[route];
+  if (!container) return;
 
   container.innerHTML = '';
   container.style.animation = 'none';
@@ -96,6 +199,8 @@ async function navigate() {
 
   if (renderer) renderer(container);
   updateSidebar(route);
+  bindNavigation();
+  bindHeaderUtilityButtons();
   await loadLiveRoute(route);
   polishLivePanelHeader();
 }
@@ -105,19 +210,20 @@ window.addEventListener('DOMContentLoaded', () => {
   ensureHeaderLocationActions();
 
   const locationSelect = document.getElementById('location-select');
-  if (locationSelect) {
-    locationSelect.addEventListener('change', async (e) => {
-      const id = e.target.value;
-      if (id === '__external__') return;
-      if (id) {
-        locationSelect.dataset.selected = id;
-        await setCurrentLocationId(id);
-        polishLivePanelHeader();
-      }
+  if (locationSelect && locationSelect.dataset.bound !== 'true') {
+    locationSelect.dataset.bound = 'true';
+    locationSelect.addEventListener('change', async event => {
+      const id = event.target.value;
+      if (!id || id === '__external__') return;
+      locationSelect.dataset.selected = id;
+      await setCurrentLocationId(id);
+      polishLivePanelHeader();
     });
   }
 
   initLocationControls();
+  bindNavigation();
+  bindHeaderUtilityButtons();
   loadLocations();
   navigate();
 
