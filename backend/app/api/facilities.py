@@ -1,25 +1,21 @@
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-from app.db.database import get_db
-from app.models.models import Facility
-from app.schemas.schemas import FacilityOut
+from fastapi import APIRouter, HTTPException, Query
+
+from app.api.live import FACILITIES
 
 router = APIRouter(prefix="/api/facilities", tags=["Facilities"])
 
 
-@router.get("", response_model=list[FacilityOut])
-def facilities(status: str | None = Query(default=None), db: Session = Depends(get_db)):
-    query = select(Facility).order_by(Facility.name)
+@router.get("")
+def facilities(status: str | None = Query(default=None)):
+    result = FACILITIES
     if status:
-        query = query.where(Facility.status == status.lower())
-    return db.scalars(query).all()
+        result = [item for item in result if item["status"].lower() == status.lower()]
+    return result
 
 
-@router.get("/{facility_id}", response_model=FacilityOut)
-def facility(facility_id: int, db: Session = Depends(get_db)):
-    from fastapi import HTTPException
-    item = db.get(Facility, facility_id)
-    if not item:
-        raise HTTPException(404, "Facility not found")
+@router.get("/{facility_id}")
+def facility(facility_id: int):
+    item = next((facility for facility in FACILITIES if facility["id"] == facility_id), None)
+    if item is None:
+        raise HTTPException(404, "Verified facility not found")
     return item
