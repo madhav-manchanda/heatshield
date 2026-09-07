@@ -1,4 +1,5 @@
 from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -10,6 +11,8 @@ class WeatherOut(BaseModel):
     temperature: float
     humidity: float
     wind_speed: float
+    apparent_temperature: float | None = None
+    data_source: str
 
 
 class RiskOut(BaseModel):
@@ -18,11 +21,13 @@ class RiskOut(BaseModel):
     location_id: int
     timestamp: datetime
     thermal_score: float
-    exposure_score: float
-    vulnerability_score: float
-    infrastructure_score: float
+    exposure_score: float | None = None
+    vulnerability_score: float | None = None
+    infrastructure_score: float | None = None
     final_score: float
     risk_level: str
+    risk_basis: str
+    data_source: str
 
 
 class FacilityOut(BaseModel):
@@ -32,9 +37,10 @@ class FacilityOut(BaseModel):
     type: str
     latitude: float
     longitude: float
-    capacity: int
-    occupancy: int
+    capacity: int | None = None
+    occupancy: int | None = None
     status: str
+    data_source: str
 
 
 class AreaOut(BaseModel):
