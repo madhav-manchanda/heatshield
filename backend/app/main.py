@@ -8,8 +8,9 @@ from app.api.risk import router as risk_router
 from app.api.facilities import router as facilities_router
 from app.api.alerts import router as alerts_router
 from app.api.responders import router as responders_router
+from app.api.live import router as live_router
 
-app = FastAPI(title=settings.app_name, version="0.1.0", description="HeatShield heat-risk decision-support API")
+app = FastAPI(title=settings.app_name, version="0.2.0", description="HeatShield heat-risk decision-support API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -24,6 +25,7 @@ app.include_router(risk_router)
 app.include_router(facilities_router)
 app.include_router(alerts_router)
 app.include_router(responders_router)
+app.include_router(live_router)
 
 
 @app.on_event("startup")
@@ -38,4 +40,4 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "healthy"}
+    return {"status": "healthy", "live_weather": "Open-Meteo"}
