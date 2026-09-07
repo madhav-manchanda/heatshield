@@ -1,8 +1,11 @@
 from __future__ import annotations
+
 from datetime import datetime
+
 from geoalchemy2 import Geometry
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.db.database import Base
 
 
@@ -25,9 +28,9 @@ class GridCell(Base):
     geom: Mapped[object] = mapped_column(Geometry("POLYGON", srid=4326, spatial_index=True), nullable=False)
     center_latitude: Mapped[float] = mapped_column(Float, nullable=False)
     center_longitude: Mapped[float] = mapped_column(Float, nullable=False)
-    exposure_score: Mapped[float] = mapped_column(Float, nullable=False, default=0)
-    vulnerability_score: Mapped[float] = mapped_column(Float, nullable=False, default=0)
-    infrastructure_score: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    exposure_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    vulnerability_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    infrastructure_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class Weather(Base):
@@ -39,6 +42,7 @@ class Weather(Base):
     humidity: Mapped[float] = mapped_column(Float, nullable=False)
     wind_speed: Mapped[float] = mapped_column(Float, default=0)
     apparent_temperature: Mapped[float | None] = mapped_column(Float, nullable=True)
+    data_source: Mapped[str] = mapped_column(String(120), nullable=False, default="unknown")
     location: Mapped[Location] = relationship(back_populates="weather")
 
 
@@ -48,11 +52,13 @@ class RiskScore(Base):
     location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
     timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     thermal_score: Mapped[float] = mapped_column(Float, nullable=False)
-    exposure_score: Mapped[float] = mapped_column(Float, nullable=False)
-    vulnerability_score: Mapped[float] = mapped_column(Float, nullable=False)
-    infrastructure_score: Mapped[float] = mapped_column(Float, nullable=False)
+    exposure_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    vulnerability_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    infrastructure_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     final_score: Mapped[float] = mapped_column(Float, nullable=False)
     risk_level: Mapped[str] = mapped_column(String(20), nullable=False)
+    risk_basis: Mapped[str] = mapped_column(String(80), nullable=False, default="thermal_only")
+    data_source: Mapped[str] = mapped_column(String(120), nullable=False, default="unknown")
     location: Mapped[Location] = relationship(back_populates="risks")
 
 
@@ -64,16 +70,7 @@ class Facility(Base):
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     geom: Mapped[object] = mapped_column(Geometry("POINT", srid=4326, spatial_index=True), nullable=True)
-    capacity: Mapped[int] = mapped_column(Integer, nullable=False)
-    occupancy: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    status: Mapped[str] = mapped_column(String(30), nullable=False, default="available")
-
-
-class Alert(Base):
-    __tablename__ = "alerts"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), nullable=True)
-    severity: Mapped[str] = mapped_column(String(20), nullable=False)
-    message: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    active: Mapped[bool] = mapped_column(default=True)
+    capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    occupancy: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(60), nullable=False, default="unknown")
+    data_source: Mapped[str] = mapped_column(String(160), nullable=False, default="unknown")
