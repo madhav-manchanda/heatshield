@@ -2,6 +2,7 @@ import { renderDashboard } from './pages/dashboard.js';
 import { renderRiskMap } from './pages/risk-map.js';
 import { renderInterventions } from './pages/interventions.js';
 import { renderFirstResponder } from './pages/first-responder.js';
+import { loadLiveDashboard } from './live.js';
 
 const routes = {
   'dashboard': renderDashboard,
@@ -36,24 +37,25 @@ function updateSidebar(route) {
   });
 }
 
-function navigate() {
+async function navigate() {
   const route = getRoute();
   const container = document.getElementById('app-content');
   const renderer = routes[route];
-  
+
   container.innerHTML = '';
   container.style.animation = 'none';
-  container.offsetHeight; // trigger reflow
+  container.offsetHeight;
   container.style.animation = 'fadeIn 0.15s ease-out';
-  
-  if (renderer) {
-    renderer(container);
-  }
-  
+
+  if (renderer) renderer(container);
   updateSidebar(route);
+
+  // Keep the existing UI, but hydrate its telemetry with live weather.
+  if (route === 'dashboard') {
+    await loadLiveDashboard(1);
+  }
 }
 
-// Toast utility
 window.triggerToast = function(msg) {
   const toast = document.getElementById('toast');
   const text = document.getElementById('toast-message');
