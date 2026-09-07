@@ -39,6 +39,25 @@ function updateSidebar(route) {
   });
 }
 
+function ensureHeaderLocationActions() {
+  const select = document.getElementById('location-select');
+  if (!select || document.getElementById('header-location-actions')) return;
+
+  const wrapper = document.createElement('div');
+  wrapper.id = 'header-location-actions';
+  wrapper.className = 'flex items-center gap-1.5';
+  wrapper.innerHTML = `
+    <button id="header-change-location" type="button" aria-label="Search for a location" title="Search any city or location" class="h-9 px-3 rounded-full bg-surface-container-low border border-outline-variant/40 text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors text-xs font-semibold hidden sm:flex items-center gap-1.5">
+      <span class="material-symbols-outlined text-[17px]">search</span>
+      <span>Location</span>
+    </button>
+    <button id="header-use-location" type="button" aria-label="Use current location" title="Use my current GPS location" class="h-9 w-9 rounded-full bg-primary-container text-on-primary hover:opacity-90 transition-opacity flex items-center justify-center">
+      <span class="material-symbols-outlined text-[18px]">my_location</span>
+    </button>`;
+
+  select.parentNode.insertBefore(wrapper, select.nextSibling);
+}
+
 function polishLivePanelHeader() {
   const status = document.getElementById('connection-status')?.dataset.status;
   if (status !== 'live') return;
@@ -83,6 +102,8 @@ async function navigate() {
 
 window.addEventListener('hashchange', navigate);
 window.addEventListener('DOMContentLoaded', () => {
+  ensureHeaderLocationActions();
+
   const locationSelect = document.getElementById('location-select');
   if (locationSelect) {
     locationSelect.addEventListener('change', async (e) => {
@@ -100,7 +121,6 @@ window.addEventListener('DOMContentLoaded', () => {
   loadLocations();
   navigate();
 
-  // Offer GPS once when the dashboard first opens; the user must explicitly approve it.
   setTimeout(() => {
     if (getRoute() === 'dashboard' && !sessionStorage.getItem('heatshield-location-prompt-seen')) {
       sessionStorage.setItem('heatshield-location-prompt-seen', '1');
