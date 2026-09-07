@@ -59,6 +59,13 @@ def prepare_database():
         connection.execute(text("ALTER TABLE facilities ALTER COLUMN capacity DROP NOT NULL"))
         connection.execute(text("ALTER TABLE facilities ALTER COLUMN occupancy DROP NOT NULL"))
 
+        # Remove records created by the former synthetic MVP seed. New records
+        # are explicitly tagged with their real source and are never deleted.
+        connection.execute(text("DELETE FROM weather WHERE data_source = 'legacy_unverified'"))
+        connection.execute(text("DELETE FROM risk_scores WHERE data_source = 'legacy_unverified'"))
+        connection.execute(text("DELETE FROM facilities WHERE data_source = 'legacy_unverified'"))
+        connection.execute(text("DELETE FROM alerts WHERE message LIKE 'High heat risk is expected during the afternoon peak period.%'"))
+
 
 def ensure_reference_locations():
     with SessionLocal() as db:
