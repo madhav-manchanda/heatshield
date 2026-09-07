@@ -14,8 +14,8 @@ app = FastAPI(title=settings.app_name, version="0.2.0", description="HeatShield 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
+    allow_origin_regex=r"https?://.*",
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
