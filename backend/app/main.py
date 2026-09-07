@@ -7,16 +7,17 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.db.database import Base, engine, SessionLocal
 from app.models import models  # noqa: F401
+from app.models.models import Location
 from app.api.weather import router as weather_router
 from app.api.risk import router as risk_router
 from app.api.facilities import router as facilities_router
 from app.api.alerts import router as alerts_router
 from app.api.responders import router as responders_router
-from app.api.live import router as live_router
+from app.api.live import LOCATIONS, router as live_router
 from app.api.spatial import router as spatial_router
 from app.services.live_sync import live_sync_loop
 
-app = FastAPI(title=settings.app_name, version="0.3.0", description="HeatShield hyperlocal heat-risk decision-support API")
+app = FastAPI(title=settings.app_name, version="0.4.0", description="HeatShield hyperlocal heat-risk decision-support API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,21 +39,45 @@ app.include_router(spatial_router)
 def prepare_database():
     with engine.begin() as connection:
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
-        
+
     Base.metadata.create_all(bind=engine)
-    
+
     with engine.begin() as connection:
         connection.execute(text("ALTER TABLE locations ADD COLUMN IF NOT EXISTS geom geometry(POINT,4326)"))
         connection.execute(text("ALTER TABLE weather ADD COLUMN IF NOT EXISTS apparent_temperature double precision"))
+        connection.execute(text("ALTER TABLE weather ADD COLUMN IF NOT EXISTS data_source varchar(120) NOT NULL DEFAULT 'legacy_unverified'"))
+        connection.execute(text("ALTER TABLE risk_scores ADD COLUMN IF NOT EXISTS risk_basis varchar(80) NOT NULL DEFAULT 'legacy_unverified'"))
+        connection.execute(text("ALTER TABLE risk_scores ADD COLUMN IF NOT EXISTS data_source varchar(120) NOT NULL DEFAULT 'legacy_unverified'"))
+        connection.execute(text("ALTER TABLE risk_scores ALTER COLUMN exposure_score DROP NOT NULL"))
+        connection.execute(text("ALTER TABLE risk_scores ALTER COLUMN vulnerability_score DROP NOT NULL"))
+        connection.execute(text("ALTER TABLE risk_scores ALTER COLUMN infrastructure_score DROP NOT NULL"))
+        connection.execute(text("ALTER TABLE grid_cells ALTER COLUMN exposure_score DROP NOT NULL"))
+        connection.execute(text("ALTER TABLE grid_cells ALTER COLUMN vulnerability_score DROP NOT NULL"))
+        connection.execute(text("ALTER TABLE grid_cells ALTER COLUMN infrastructure_score DROP NOT NULL"))
         connection.execute(text("ALTER TABLE facilities ADD COLUMN IF NOT EXISTS geom geometry(POINT,4326)"))
+        connection.execute(text("ALTER TABLE facilities ADD COLUMN IF NOT EXISTS data_source varchar(160) NOT NULL DEFAULT 'legacy_unverified'"))
+        connection.execute(text("ALTER TABLE facilities ALTER COLUMN capacity DROP NOT NULL"))
+        connection.execute(text("ALTER TABLE facilities ALTER COLUMN occupancy DROP NOT NULL"))
+
+
+def ensure_reference_locations():
+    with SessionLocal() as db:
+        for item in LOCATIONS:
+            existing = db.get(Location, item["id"])
+            if existing is None:
+                db.add(Location(id=item["id"], name=item["name"], district=item["district"], latitude=item["latitude"], longitude=item["longitude"]))
+            else:
+                existing.name = item["name"]
+                existing.district = item["district"]
+                existing.latitude = item["latitude"]
+                existing.longitude = item["longitude"]
+        db.commit()
 
 
 @app.on_event("startup")
 def startup():
     prepare_database()
-    from app.api.spatial import ensure_spatial_seed
-    with SessionLocal() as db:
-        ensure_spatial_seed(db)
+    ensure_reference_locations()
     app.state.live_sync_task = asyncio.create_task(live_sync_loop())
 
 
@@ -69,9 +94,9 @@ async def shutdown():
 
 @app.get("/")
 def root():
-    return {"name": "HeatShield API", "status": "online", "docs": "/docs", "spatial": "PostGIS", "sync_interval_minutes": 5}
+    return {"name": "HeatShield API", "status": "online", "docs": "/docs", "spatial": "PostGIS", "sync_interval_minutes": 5, "data_policy": "real-source-only"}
 
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "live_weather": "Open-Meteo", "spatial_database": "PostGIS", "automatic_sync": "5 minutes"}
+    return {"status": "healthy", "live_weather": "Open-Meteo", "spatial_database": "PostGIS", "automatic_sync": "5 minutes", "data_policy": "real-source-only"}
