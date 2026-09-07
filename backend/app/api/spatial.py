@@ -1,19 +1,16 @@
 from datetime import datetime
-from math import ceil
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from geoalchemy2 import WKTElement
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.api.live import FACILITIES, LOCATIONS, build_risk, fetch_weather, location_public, make_forecast
+from app.api.live import FACILITIES, LOCATIONS, build_risk, fetch_weather
 from app.db.database import get_db
-from app.models.models import Facility, GridCell, Location, RiskScore, Weather
+from app.models.models import Facility, GridCell, Location
 
 router = APIRouter(prefix="/api/spatial", tags=["Spatial Analysis"])
 
-# Delhi MVP analysis extent. Cells are spatially real PostGIS polygons; weather is
-# sampled from the nearest live reference point until a denser weather grid is added.
 MIN_LAT, MAX_LAT = 28.50, 28.75
 MIN_LON, MAX_LON = 77.05, 77.35
 GRID_ROWS, GRID_COLS = 10, 12
@@ -37,12 +34,9 @@ def ensure_spatial_seed(db: Session) -> None:
         cell_id = 1
         for r in range(GRID_ROWS):
             for c in range(GRID_COLS):
-                min_lat = MIN_LAT + r * lat_step
-                max_lat = min_lat + lat_step
-                min_lon = MIN_LON + c * lon_step
-                max_lon = min_lon + lon_step
-                center_lat = (min_lat + max_lat) / 2
-                center_lon = (min_lon + max_lon) / 2
+                min_lat, max_lat = MIN_LAT + r * lat_step, MIN_LAT + (r + 1) * lat_step
+                min_lon, max_lon = MIN_LON + c * lon_step, MIN_LON + (c + 1) * lon_step
+                center_lat, center_lon = (min_lat + max_lat) / 2, (min_lon + max_lon) / 2
                 nearest = min(LOCATIONS, key=lambda x: (x["latitude"] - center_lat) ** 2 + (x["longitude"] - center_lon) ** 2)
                 ring = f"{min_lon} {min_lat},{max_lon} {min_lat},{max_lon} {max_lat},{min_lon} {max_lat},{min_lon} {min_lat}"
                 db.add(GridCell(id=cell_id, cell_code=f"DEL-{r+1:02d}-{c+1:02d}", geom=WKTElement(f"POLYGON(({ring}))", srid=4326), center_latitude=center_lat, center_longitude=center_lon, exposure_score=nearest["exposure"], vulnerability_score=nearest["vulnerability"], infrastructure_score=nearest["infrastructure"]))
@@ -52,34 +46,29 @@ def ensure_spatial_seed(db: Session) -> None:
 
 def explain_risk(risk: dict) -> dict:
     components = {
-        "thermal_stress": round(risk["thermal_score"] * 0.40, 1),
+        "thermal_stress": round(risk["thermal_score"] * 0.45, 1),
         "population_exposure": round(risk["exposure_score"] * 0.25, 1),
         "vulnerability": round(risk["vulnerability_score"] * 0.20, 1),
-        "infrastructure_gap": round(risk["infrastructure_score"] * 0.15, 1),
+        "infrastructure_gap": round((100 - risk["infrastructure_score"]) * 0.10, 1),
     }
     main_driver = max(components, key=components.get)
-    labels = {
-        "thermal_stress": "extreme thermal stress",
-        "population_exposure": "high population exposure",
-        "vulnerability": "high vulnerability",
-        "infrastructure_gap": "limited heat-protection infrastructure",
-    }
-    reasons = [
-        labels[name] for name, value in components.items() if value >= 12
-    ]
+    labels = {"thermal_stress": "thermal stress", "population_exposure": "population exposure", "vulnerability": "vulnerability", "infrastructure_gap": "an infrastructure gap"}
+    reasons = [labels[name] for name, value in components.items() if value >= 12]
     return {"components": components, "main_driver": labels[main_driver], "reasons": reasons or [labels[main_driver]], "summary": "This area is risky mainly because of " + labels[main_driver] + "."}
+
+
+def nearest_location(cell: GridCell) -> dict:
+    return min(LOCATIONS, key=lambda x: (x["latitude"] - cell.center_latitude) ** 2 + (x["longitude"] - cell.center_longitude) ** 2)
 
 
 @router.get("/grid")
 async def risk_grid(db: Session = Depends(get_db)):
     ensure_spatial_seed(db)
     cells = db.query(GridCell).all()
-    reference_weather = {}
-    for location in LOCATIONS:
-        reference_weather[location["id"]] = await fetch_weather(location)
+    reference_weather = {location["id"]: await fetch_weather(location) for location in LOCATIONS}
     result = []
     for cell in cells:
-        nearest = min(LOCATIONS, key=lambda x: (x["latitude"] - cell.center_latitude) ** 2 + (x["longitude"] - cell.center_longitude) ** 2)
+        nearest = nearest_location(cell)
         current = reference_weather[nearest["id"]]["current"]
         risk = build_risk({**nearest, "exposure": cell.exposure_score, "vulnerability": cell.vulnerability_score, "infrastructure": cell.infrastructure_score}, current["temperature_2m"], current["relative_humidity_2m"])
         result.append({"id": cell.id, "cell_code": cell.cell_code, "center": {"latitude": cell.center_latitude, "longitude": cell.center_longitude}, "risk": risk, "explanation": explain_risk(risk), "exposure_status": "highly exposed" if cell.exposure_score >= 75 else "moderately exposed" if cell.exposure_score >= 55 else "lower exposure"})
@@ -92,10 +81,9 @@ async def why_risky(cell_code: str = Query(...), db: Session = Depends(get_db)):
     cell = db.query(GridCell).filter(GridCell.cell_code == cell_code).first()
     if not cell:
         raise HTTPException(404, "Grid cell not found")
-    nearest = min(LOCATIONS, key=lambda x: (x["latitude"] - cell.center_latitude) ** 2 + (x["longitude"] - cell.center_longitude) ** 2)
-    data = await fetch_weather(nearest)
-    current = data["current"]
-    risk = build_risk({**nearest, "exposure": cell.exposure_score, "vulnerability": cell.vulnerability_score, "infrastructure": cell.infrastructure_score}, current["temperature_2m"], current["relative_humidity_2m"])
+    location = nearest_location(cell)
+    current = (await fetch_weather(location))["current"]
+    risk = build_risk({**location, "exposure": cell.exposure_score, "vulnerability": cell.vulnerability_score, "infrastructure": cell.infrastructure_score}, current["temperature_2m"], current["relative_humidity_2m"])
     return {"cell": cell.cell_code, "risk": risk, "explanation": explain_risk(risk)}
 
 
@@ -119,11 +107,6 @@ def history(cell_code: str = Query(...), days: int = Query(7, ge=1, le=30), db: 
     cell = db.query(GridCell).filter(GridCell.cell_code == cell_code).first()
     if not cell:
         raise HTTPException(404, "Grid cell not found")
-    nearest = min(LOCATIONS, key=lambda x: (x["latitude"] - cell.center_latitude) ** 2 + (x["longitude"] - cell.center_longitude) ** 2)
-    rows = db.execute(text("""
-        SELECT timestamp, temperature, humidity, apparent_temperature
-        FROM weather
-        WHERE location_id = :location_id AND timestamp >= NOW() - (:days || ' days')::interval
-        ORDER BY timestamp DESC
-    """), {"location_id": nearest["id"], "days": days}).mappings().all()
-    return {"cell": cell_code, "reference_location": nearest["name"], "days": days, "history": [dict(row) for row in rows], "note": "History contains synchronized observations collected by HeatShield."}
+    location = nearest_location(cell)
+    rows = db.execute(text("SELECT timestamp, temperature, humidity, apparent_temperature FROM weather WHERE location_id = :location_id AND timestamp >= NOW() - (:days || ' days')::interval ORDER BY timestamp DESC"), {"location_id": location["id"], "days": days}).mappings().all()
+    return {"cell": cell_code, "reference_location": location["name"], "days": days, "history": [dict(row) for row in rows], "note": "History contains synchronized observations collected by HeatShield."}
