@@ -1,3 +1,5 @@
+import './truth-data.js';
+
 export const API_BASE = window.HEATSHIELD_API_URL || 'http://127.0.0.1:8000';
 
 const CACHE_KEY = 'heatshield-live-cache-v2';
