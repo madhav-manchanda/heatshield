@@ -1,13 +1,16 @@
+from datetime import datetime, timedelta
 from math import asin, cos, radians, sin, sqrt
+from zoneinfo import ZoneInfo
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import text
 
 from app.api.live import FACILITIES, build_environmental_risk, fetch_weather, fetch_weather_points
-from app.db.database import SessionLocal
 
 router = APIRouter(prefix="/api/spatial", tags=["Spatial Analysis"])
 
+IST = ZoneInfo("Asia/Kolkata")
+OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 MIN_LAT, MAX_LAT = 28.50, 28.75
 MIN_LON, MAX_LON = 77.05, 77.35
 GRID_ROWS, GRID_COLS = 10, 12
@@ -104,8 +107,43 @@ def nearby(latitude: float = Query(..., ge=-90, le=90), longitude: float = Query
 
 
 @router.get("/history")
-def history(cell_code: str = Query(...), days: int = Query(7, ge=1, le=30)):
+async def history(cell_code: str = Query(...), days: int = Query(7, ge=1, le=30)):
     cell = parse_cell(cell_code)
-    with SessionLocal() as db:
-        rows = db.execute(text("SELECT timestamp, temperature, humidity, wind_speed, apparent_temperature, data_source FROM weather WHERE data_source = 'Open-Meteo' AND timestamp >= NOW() - (:days || ' days')::interval ORDER BY timestamp DESC"), {"days": days}).mappings().all()
-    return {"cell": cell_code, "center": {"latitude": cell["center_latitude"], "longitude": cell["center_longitude"]}, "days": days, "history": [dict(row) for row in rows], "source": "Open-Meteo synchronized observations"}
+    end_date = datetime.now(IST).date()
+    start_date = end_date - timedelta(days=days - 1)
+    params = {
+        "latitude": cell["center_latitude"],
+        "longitude": cell["center_longitude"],
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "hourly": "temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m",
+        "timezone": "Asia/Kolkata",
+        "temperature_unit": "celsius",
+        "wind_speed_unit": "kmh",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.get(OPEN_METEO_ARCHIVE_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+    except (httpx.HTTPError, httpx.TimeoutException) as exc:
+        raise HTTPException(503, f"Historical weather provider unavailable: {exc.__class__.__name__}") from exc
+
+    hourly = data.get("hourly", {})
+    history_rows = []
+    times = hourly.get("time", [])
+    temperatures = hourly.get("temperature_2m", [])
+    humidity = hourly.get("relative_humidity_2m", [])
+    apparent = hourly.get("apparent_temperature", [])
+    wind = hourly.get("wind_speed_10m", [])
+    for index, timestamp in enumerate(times):
+        if index >= len(temperatures) or index >= len(humidity):
+            break
+        history_rows.append({
+            "timestamp": timestamp,
+            "temperature": temperatures[index],
+            "humidity": humidity[index],
+            "apparent_temperature": apparent[index] if index < len(apparent) else None,
+            "wind_speed": wind[index] if index < len(wind) else None,
+        })
+    return {"cell": cell_code, "center": {"latitude": cell["center_latitude"], "longitude": cell["center_longitude"]}, "days": days, "history": history_rows, "source": "Open-Meteo Historical Weather"}
