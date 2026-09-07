@@ -10,6 +10,7 @@ router = APIRouter(prefix="/api/live", tags=["Live Data"])
 
 IST = ZoneInfo("Asia/Kolkata")
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 
 LOCATIONS = [
     {"id": 1, "name": "Central Delhi", "district": "Central Delhi", "latitude": 28.6448, "longitude": 77.2167, "exposure": 82, "vulnerability": 76, "infrastructure": 32},
@@ -27,13 +28,13 @@ FACILITIES = [
 ]
 
 
-async def fetch_weather(location: dict) -> dict:
+async def fetch_weather(location: dict, *, auto_timezone: bool = False) -> dict:
     params = {
         "latitude": location["latitude"],
         "longitude": location["longitude"],
         "current": "temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m",
         "hourly": "temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m",
-        "timezone": "Asia/Kolkata",
+        "timezone": "auto" if auto_timezone else "Asia/Kolkata",
         "forecast_days": 5,
         "temperature_unit": "celsius",
         "wind_speed_unit": "kmh",
@@ -62,8 +63,20 @@ def build_risk(location: dict, temperature: float, humidity: float) -> dict:
     }
 
 
+def build_environmental_risk(temperature: float, humidity: float) -> dict:
+    heat_index = heat_index_celsius(temperature, humidity)
+    thermal = thermal_score(heat_index)
+    return {
+        "heat_index": heat_index,
+        "thermal_score": thermal,
+        "final_score": thermal,
+        "risk_level": risk_level(thermal),
+        "risk_basis": "thermal_only",
+    }
+
+
 def location_public(location: dict) -> dict:
-    return {k: location[k] for k in ("id", "name", "district", "latitude", "longitude")}
+    return {k: location[k] for k in ("id", "name", "district", "latitude", "longitude") if k in location}
 
 
 def make_forecast(data: dict, location: dict) -> list[dict]:
@@ -82,6 +95,25 @@ def make_forecast(data: dict, location: dict) -> list[dict]:
         a = apparent[index] if index < len(apparent) else t
         w = wind[index] if index < len(wind) else 0
         result.append({"timestamp": timestamp, "temperature": t, "humidity": h, "apparent_temperature": a, "wind_speed": w, **build_risk(location, t, h)})
+    return result
+
+
+def make_environmental_forecast(data: dict) -> list[dict]:
+    hourly = data.get("hourly", {})
+    times = hourly.get("time", [])
+    temperatures = hourly.get("temperature_2m", [])
+    humidity = hourly.get("relative_humidity_2m", [])
+    apparent = hourly.get("apparent_temperature", [])
+    wind = hourly.get("wind_speed_10m", [])
+    result = []
+    for index, timestamp in enumerate(times):
+        if index >= len(temperatures):
+            break
+        t = temperatures[index]
+        h = humidity[index] if index < len(humidity) else 50
+        a = apparent[index] if index < len(apparent) else t
+        w = wind[index] if index < len(wind) else 0
+        result.append({"timestamp": timestamp, "temperature": t, "humidity": h, "apparent_temperature": a, "wind_speed": w, **build_environmental_risk(t, h)})
     return result
 
 
@@ -106,6 +138,68 @@ async def live_overview(location_id: int = Query(1, ge=1)):
         "peak": peak,
         "forecast": forecast[:120],
     }
+
+
+@router.get("/current")
+async def current_location_weather(
+    latitude: float = Query(..., ge=-90, le=90),
+    longitude: float = Query(..., ge=-180, le=180),
+):
+    location = {
+        "name": "Current location",
+        "district": "Current location",
+        "latitude": latitude,
+        "longitude": longitude,
+    }
+    data = await fetch_weather(location, auto_timezone=True)
+    current = data["current"]
+    risk = build_environmental_risk(current["temperature_2m"], current["relative_humidity_2m"])
+    forecast = make_environmental_forecast(data)
+    peak = max(forecast[:24] or forecast, key=lambda item: item["final_score"], default=risk)
+    return {
+        "source": "Open-Meteo",
+        "updated_at": current.get("time"),
+        "timezone": data.get("timezone", "auto"),
+        "location": location_public(location),
+        "current": {
+            "temperature": current["temperature_2m"],
+            "humidity": current["relative_humidity_2m"],
+            "apparent_temperature": current["apparent_temperature"],
+            "wind_speed": current["wind_speed_10m"],
+            **risk,
+            "exposure_score": None,
+            "vulnerability_score": None,
+            "infrastructure_score": None,
+        },
+        "peak": peak,
+        "forecast": forecast[:120],
+        "risk_note": "This location uses live thermal stress only. Municipal exposure, vulnerability and infrastructure scores are not available for an arbitrary GPS coordinate.",
+    }
+
+
+@router.get("/search")
+async def search_locations(query: str = Query(..., min_length=2, max_length=80)):
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(OPEN_METEO_GEOCODING_URL, params={"name": query, "count": 8, "language": "en", "format": "json"})
+            response.raise_for_status()
+            data = response.json()
+    except (httpx.HTTPError, httpx.TimeoutException) as exc:
+        raise HTTPException(503, f"Location search unavailable: {exc.__class__.__name__}") from exc
+
+    results = []
+    for item in data.get("results", []):
+        results.append({
+            "name": item.get("name"),
+            "country": item.get("country"),
+            "country_code": item.get("country_code"),
+            "admin1": item.get("admin1"),
+            "admin2": item.get("admin2"),
+            "latitude": item.get("latitude"),
+            "longitude": item.get("longitude"),
+            "timezone": item.get("timezone"),
+        })
+    return {"query": query, "results": results}
 
 
 @router.get("/risk-map")
