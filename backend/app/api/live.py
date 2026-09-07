@@ -24,14 +24,15 @@ LOCATIONS = [
     {"id": 5, "name": "North Delhi", "district": "North Delhi", "latitude": 28.7041, "longitude": 77.1025, "location_type": "weather_reference_point"},
 ]
 
-# Real fixed cooling zones reported during Delhi's 2026 heat-relief operation.
-# Capacity/occupancy are null unless a public source publishes them. Status is
-# deliberately not inferred from weather or fabricated occupancy.
+# Real fixed cooling zones publicly reported during Delhi's 2026 heat-relief
+# operation. Delhi Government reporting states cooling zones provide seating
+# for 100 people. Occupancy/open-closed status is not published as a live feed,
+# so HeatShield does not fabricate it.
 FACILITIES = [
-    {"id": 1, "name": "Cooling Zone — GTB Hospital Gate 3", "type": "cooling_zone", "latitude": 28.6883, "longitude": 77.3090, "capacity": None, "occupancy": None, "status": "verified_location_live_status_unavailable", "verification_date": "2026-06-09", "source": "Delhi heat-relief operation review reported 09-Jun-2026", "source_url": "https://ddma.delhi.gov.in/"},
-    {"id": 2, "name": "Cooling Zone — Jama Masjid Metro Gate 3", "type": "cooling_zone", "latitude": 28.6508, "longitude": 77.2335, "capacity": 80, "occupancy": None, "status": "verified_location_live_status_unavailable", "verification_date": "2026-06-09", "source": "Delhi heat-relief operation review; reported seating capacity about 80", "source_url": "https://ddma.delhi.gov.in/"},
-    {"id": 3, "name": "Cooling Zone — Shalimar Chowk", "type": "cooling_zone", "latitude": 28.7034, "longitude": 77.1570, "capacity": None, "occupancy": None, "status": "verified_location_live_status_unavailable", "verification_date": "2026-06-09", "source": "Delhi heat-relief operation review reported 09-Jun-2026", "source_url": "https://ddma.delhi.gov.in/"},
-    {"id": 4, "name": "Cooling Zone — Kalkaji / Lotus Temple", "type": "cooling_zone", "latitude": 28.5535, "longitude": 77.2588, "capacity": None, "occupancy": None, "status": "verified_location_live_status_unavailable", "verification_date": "2026-06-09", "source": "Delhi heat-relief operation review reported 09-Jun-2026", "source_url": "https://ddma.delhi.gov.in/"},
+    {"id": 1, "name": "Cooling Zone — GTB Hospital Gate 3", "type": "cooling_zone", "latitude": 28.6883, "longitude": 77.3090, "capacity": 100, "occupancy": None, "status": "publicly_reported_live_status_unavailable", "verification_date": "2026-06-09", "source": "Delhi Government 2026 heat-relief reporting", "source_url": "https://rekhagupta.in/governance"},
+    {"id": 2, "name": "Cooling Zone — Jama Masjid Metro Gate 3", "type": "cooling_zone", "latitude": 28.6508, "longitude": 77.2335, "capacity": 100, "occupancy": None, "status": "publicly_reported_live_status_unavailable", "verification_date": "2026-06-09", "source": "Delhi Government 2026 heat-relief reporting", "source_url": "https://rekhagupta.in/governance"},
+    {"id": 3, "name": "Cooling Zone — Shalimar Chowk", "type": "cooling_zone", "latitude": 28.7034, "longitude": 77.1570, "capacity": 100, "occupancy": None, "status": "publicly_reported_live_status_unavailable", "verification_date": "2026-06-09", "source": "Delhi Government 2026 heat-relief reporting", "source_url": "https://rekhagupta.in/governance"},
+    {"id": 4, "name": "Cooling Zone — Kalkaji / Lotus Temple", "type": "cooling_zone", "latitude": 28.5535, "longitude": 77.2588, "capacity": 100, "occupancy": None, "status": "publicly_reported_live_status_unavailable", "verification_date": "2026-06-09", "source": "Delhi Government 2026 heat-relief reporting", "source_url": "https://rekhagupta.in/governance"},
 ]
 
 
@@ -41,16 +42,7 @@ def location_public(location: dict) -> dict:
 
 
 async def fetch_weather(location: dict, *, auto_timezone: bool = False) -> dict:
-    params = {
-        "latitude": location["latitude"],
-        "longitude": location["longitude"],
-        "current": "temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m",
-        "hourly": "temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m",
-        "timezone": "auto" if auto_timezone else "Asia/Kolkata",
-        "forecast_days": 5,
-        "temperature_unit": "celsius",
-        "wind_speed_unit": "kmh",
-    }
+    params = {"latitude": location["latitude"], "longitude": location["longitude"], "current": "temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m", "hourly": "temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m", "timezone": "auto" if auto_timezone else "Asia/Kolkata", "forecast_days": 5, "temperature_unit": "celsius", "wind_speed_unit": "kmh"}
     try:
         async with httpx.AsyncClient(timeout=12) as client:
             response = await client.get(OPEN_METEO_URL, params=params)
@@ -63,14 +55,7 @@ async def fetch_weather(location: dict, *, auto_timezone: bool = False) -> dict:
 async def fetch_weather_points(points: list[dict]) -> list[dict]:
     if not points:
         return []
-    params = {
-        "latitude": ",".join(str(point["latitude"]) for point in points),
-        "longitude": ",".join(str(point["longitude"]) for point in points),
-        "current": "temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m",
-        "timezone": "Asia/Kolkata",
-        "temperature_unit": "celsius",
-        "wind_speed_unit": "kmh",
-    }
+    params = {"latitude": ",".join(str(point["latitude"]) for point in points), "longitude": ",".join(str(point["longitude"]) for point in points), "current": "temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m", "timezone": "Asia/Kolkata", "temperature_unit": "celsius", "wind_speed_unit": "kmh"}
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.get(OPEN_METEO_URL, params=params)
@@ -84,17 +69,7 @@ async def fetch_weather_points(points: list[dict]) -> list[dict]:
 def build_environmental_risk(temperature: float, humidity: float) -> dict:
     heat_index = heat_index_celsius(temperature, humidity)
     thermal = thermal_score(heat_index)
-    return {
-        "heat_index": heat_index,
-        "thermal_score": thermal,
-        "exposure_score": None,
-        "vulnerability_score": None,
-        "infrastructure_score": None,
-        "final_score": thermal,
-        "risk_level": risk_level(thermal),
-        "risk_basis": "thermal_only",
-        "data_completeness": "weather_only",
-    }
+    return {"heat_index": heat_index, "thermal_score": thermal, "exposure_score": None, "vulnerability_score": None, "infrastructure_score": None, "final_score": thermal, "risk_level": risk_level(thermal), "risk_basis": "thermal_only", "data_completeness": "weather_only"}
 
 
 def build_risk(location: dict, temperature: float, humidity: float) -> dict:
@@ -112,8 +87,7 @@ def make_forecast(data: dict) -> list[dict]:
     for index, timestamp in enumerate(times):
         if index >= len(temperatures) or index >= len(humidity):
             break
-        temperature = temperatures[index]
-        result.append({"timestamp": timestamp, "temperature": temperature, "humidity": humidity[index], "apparent_temperature": apparent[index] if index < len(apparent) else None, "wind_speed": wind[index] if index < len(wind) else None, **build_environmental_risk(temperature, humidity[index])})
+        result.append({"timestamp": timestamp, "temperature": temperatures[index], "humidity": humidity[index], "apparent_temperature": apparent[index] if index < len(apparent) else None, "wind_speed": wind[index] if index < len(wind) else None, **build_environmental_risk(temperatures[index], humidity[index])})
     return result
 
 
@@ -124,7 +98,6 @@ def nearest_facility(latitude: float, longitude: float) -> tuple[dict, float]:
         d_lon = radians(b_lon - a_lon)
         value = sin(d_lat / 2) ** 2 + cos(radians(a_lat)) * cos(radians(b_lat)) * sin(d_lon / 2) ** 2
         return earth_radius * 2 * asin(sqrt(value))
-
     ranked = [(facility, haversine_km(latitude, longitude, facility["latitude"], facility["longitude"])) for facility in FACILITIES]
     return min(ranked, key=lambda item: item[1])
 
@@ -183,7 +156,7 @@ async def live_risk_map():
 
 @router.get("/facilities")
 async def live_facilities():
-    return {"source": "Delhi 2026 heat-relief operation records", "updated_at": datetime.now(IST).isoformat(), "status_note": "Facility identity is verified from public 2026 heat-relief reporting. Live occupancy/open-closed status is not publicly exposed by the source, so HeatShield does not invent it.", "facilities": FACILITIES}
+    return {"source": "Delhi Government 2026 heat-relief reporting", "updated_at": datetime.now(IST).isoformat(), "status_note": "These are publicly reported cooling-zone locations. Delhi's public reporting does not provide a live occupancy/open-closed feed, so HeatShield does not invent one.", "facilities": FACILITIES}
 
 
 @router.get("/alerts")
