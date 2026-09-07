@@ -1,10 +1,11 @@
 from datetime import datetime
+from math import asin, cos, radians, sin, sqrt
 from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 
-from app.services.thermal.engine import heat_index_celsius, thermal_score, composite_risk, risk_level
+from app.services.thermal.engine import heat_index_celsius, risk_level, thermal_score
 
 router = APIRouter(prefix="/api/live", tags=["Live Data"])
 
@@ -12,20 +13,31 @@ IST = ZoneInfo("Asia/Kolkata")
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 
+# Real Delhi geographic reference points. No invented social/infrastructure
+# scores are attached; until authoritative spatial datasets are connected,
+# HeatShield reports thermal risk only.
 LOCATIONS = [
-    {"id": 1, "name": "Central Delhi", "district": "Central Delhi", "latitude": 28.6448, "longitude": 77.2167, "exposure": 82, "vulnerability": 76, "infrastructure": 32},
-    {"id": 2, "name": "South Delhi", "district": "South Delhi", "latitude": 28.5244, "longitude": 77.1855, "exposure": 70, "vulnerability": 68, "infrastructure": 54},
-    {"id": 3, "name": "East Delhi", "district": "East Delhi", "latitude": 28.6280, "longitude": 77.2950, "exposure": 78, "vulnerability": 81, "infrastructure": 38},
-    {"id": 4, "name": "West Delhi", "district": "West Delhi", "latitude": 28.6517, "longitude": 77.1095, "exposure": 65, "vulnerability": 59, "infrastructure": 61},
-    {"id": 5, "name": "North Delhi", "district": "North Delhi", "latitude": 28.7041, "longitude": 77.1025, "exposure": 75, "vulnerability": 72, "infrastructure": 44},
+    {"id": 1, "name": "Central Delhi", "district": "Central Delhi", "latitude": 28.6448, "longitude": 77.2167, "location_type": "weather_reference_point"},
+    {"id": 2, "name": "South Delhi", "district": "South Delhi", "latitude": 28.5244, "longitude": 77.1855, "location_type": "weather_reference_point"},
+    {"id": 3, "name": "East Delhi", "district": "East Delhi", "latitude": 28.6280, "longitude": 77.2950, "location_type": "weather_reference_point"},
+    {"id": 4, "name": "West Delhi", "district": "West Delhi", "latitude": 28.6517, "longitude": 77.1095, "location_type": "weather_reference_point"},
+    {"id": 5, "name": "North Delhi", "district": "North Delhi", "latitude": 28.7041, "longitude": 77.1025, "location_type": "weather_reference_point"},
 ]
 
+# Real fixed cooling zones reported during Delhi's 2026 heat-relief operation.
+# Capacity/occupancy are null unless a public source publishes them. Status is
+# deliberately not inferred from weather or fabricated occupancy.
 FACILITIES = [
-    {"id": 1, "name": "Civic Cooling Centre — Central", "type": "cooling_center", "latitude": 28.6448, "longitude": 77.2167, "capacity": 250},
-    {"id": 2, "name": "Community Relief Centre — South", "type": "community_center", "latitude": 28.5244, "longitude": 77.1855, "capacity": 180},
-    {"id": 3, "name": "Cooling Centre — East", "type": "cooling_center", "latitude": 28.6280, "longitude": 77.2950, "capacity": 220},
-    {"id": 4, "name": "Community Centre — West", "type": "community_center", "latitude": 28.6517, "longitude": 77.1095, "capacity": 140},
+    {"id": 1, "name": "Cooling Zone — GTB Hospital Gate 3", "type": "cooling_zone", "latitude": 28.6883, "longitude": 77.3090, "capacity": None, "occupancy": None, "status": "verified_location_live_status_unavailable", "verification_date": "2026-06-09", "source": "Delhi heat-relief operation review reported 09-Jun-2026", "source_url": "https://ddma.delhi.gov.in/"},
+    {"id": 2, "name": "Cooling Zone — Jama Masjid Metro Gate 3", "type": "cooling_zone", "latitude": 28.6508, "longitude": 77.2335, "capacity": 80, "occupancy": None, "status": "verified_location_live_status_unavailable", "verification_date": "2026-06-09", "source": "Delhi heat-relief operation review; reported seating capacity about 80", "source_url": "https://ddma.delhi.gov.in/"},
+    {"id": 3, "name": "Cooling Zone — Shalimar Chowk", "type": "cooling_zone", "latitude": 28.7034, "longitude": 77.1570, "capacity": None, "occupancy": None, "status": "verified_location_live_status_unavailable", "verification_date": "2026-06-09", "source": "Delhi heat-relief operation review reported 09-Jun-2026", "source_url": "https://ddma.delhi.gov.in/"},
+    {"id": 4, "name": "Cooling Zone — Kalkaji / Lotus Temple", "type": "cooling_zone", "latitude": 28.5535, "longitude": 77.2588, "capacity": None, "occupancy": None, "status": "verified_location_live_status_unavailable", "verification_date": "2026-06-09", "source": "Delhi heat-relief operation review reported 09-Jun-2026", "source_url": "https://ddma.delhi.gov.in/"},
 ]
+
+
+def location_public(location: dict) -> dict:
+    keys = ("id", "name", "district", "latitude", "longitude", "location_type")
+    return {key: location[key] for key in keys if key in location}
 
 
 async def fetch_weather(location: dict, *, auto_timezone: bool = False) -> dict:
@@ -48,19 +60,25 @@ async def fetch_weather(location: dict, *, auto_timezone: bool = False) -> dict:
         raise HTTPException(503, f"Live weather provider unavailable: {exc.__class__.__name__}") from exc
 
 
-def build_risk(location: dict, temperature: float, humidity: float) -> dict:
-    heat_index = heat_index_celsius(temperature, humidity)
-    thermal = thermal_score(heat_index)
-    final = composite_risk(thermal, location["exposure"], location["vulnerability"], location["infrastructure"])
-    return {
-        "heat_index": heat_index,
-        "thermal_score": thermal,
-        "exposure_score": location["exposure"],
-        "vulnerability_score": location["vulnerability"],
-        "infrastructure_score": location["infrastructure"],
-        "final_score": final,
-        "risk_level": risk_level(final),
+async def fetch_weather_points(points: list[dict]) -> list[dict]:
+    if not points:
+        return []
+    params = {
+        "latitude": ",".join(str(point["latitude"]) for point in points),
+        "longitude": ",".join(str(point["longitude"]) for point in points),
+        "current": "temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m",
+        "timezone": "Asia/Kolkata",
+        "temperature_unit": "celsius",
+        "wind_speed_unit": "kmh",
     }
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.get(OPEN_METEO_URL, params=params)
+            response.raise_for_status()
+            payload = response.json()
+            return payload if isinstance(payload, list) else [payload]
+    except (httpx.HTTPError, httpx.TimeoutException) as exc:
+        raise HTTPException(503, f"Live spatial weather provider unavailable: {exc.__class__.__name__}") from exc
 
 
 def build_environmental_risk(temperature: float, humidity: float) -> dict:
@@ -69,17 +87,21 @@ def build_environmental_risk(temperature: float, humidity: float) -> dict:
     return {
         "heat_index": heat_index,
         "thermal_score": thermal,
+        "exposure_score": None,
+        "vulnerability_score": None,
+        "infrastructure_score": None,
         "final_score": thermal,
         "risk_level": risk_level(thermal),
         "risk_basis": "thermal_only",
+        "data_completeness": "weather_only",
     }
 
 
-def location_public(location: dict) -> dict:
-    return {k: location[k] for k in ("id", "name", "district", "latitude", "longitude") if k in location}
+def build_risk(location: dict, temperature: float, humidity: float) -> dict:
+    return build_environmental_risk(temperature, humidity)
 
 
-def make_forecast(data: dict, location: dict) -> list[dict]:
+def make_forecast(data: dict) -> list[dict]:
     hourly = data.get("hourly", {})
     times = hourly.get("time", [])
     temperatures = hourly.get("temperature_2m", [])
@@ -88,33 +110,23 @@ def make_forecast(data: dict, location: dict) -> list[dict]:
     wind = hourly.get("wind_speed_10m", [])
     result = []
     for index, timestamp in enumerate(times):
-        if index >= len(temperatures):
+        if index >= len(temperatures) or index >= len(humidity):
             break
-        t = temperatures[index]
-        h = humidity[index] if index < len(humidity) else 50
-        a = apparent[index] if index < len(apparent) else t
-        w = wind[index] if index < len(wind) else 0
-        result.append({"timestamp": timestamp, "temperature": t, "humidity": h, "apparent_temperature": a, "wind_speed": w, **build_risk(location, t, h)})
+        temperature = temperatures[index]
+        result.append({"timestamp": timestamp, "temperature": temperature, "humidity": humidity[index], "apparent_temperature": apparent[index] if index < len(apparent) else None, "wind_speed": wind[index] if index < len(wind) else None, **build_environmental_risk(temperature, humidity[index])})
     return result
 
 
-def make_environmental_forecast(data: dict) -> list[dict]:
-    hourly = data.get("hourly", {})
-    times = hourly.get("time", [])
-    temperatures = hourly.get("temperature_2m", [])
-    humidity = hourly.get("relative_humidity_2m", [])
-    apparent = hourly.get("apparent_temperature", [])
-    wind = hourly.get("wind_speed_10m", [])
-    result = []
-    for index, timestamp in enumerate(times):
-        if index >= len(temperatures):
-            break
-        t = temperatures[index]
-        h = humidity[index] if index < len(humidity) else 50
-        a = apparent[index] if index < len(apparent) else t
-        w = wind[index] if index < len(wind) else 0
-        result.append({"timestamp": timestamp, "temperature": t, "humidity": h, "apparent_temperature": a, "wind_speed": w, **build_environmental_risk(t, h)})
-    return result
+def nearest_facility(latitude: float, longitude: float) -> tuple[dict, float]:
+    def haversine_km(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> float:
+        earth_radius = 6371.0
+        d_lat = radians(b_lat - a_lat)
+        d_lon = radians(b_lon - a_lon)
+        value = sin(d_lat / 2) ** 2 + cos(radians(a_lat)) * cos(radians(b_lat)) * sin(d_lon / 2) ** 2
+        return earth_radius * 2 * asin(sqrt(value))
+
+    ranked = [(facility, haversine_km(latitude, longitude, facility["latitude"], facility["longitude"])) for facility in FACILITIES]
+    return min(ranked, key=lambda item: item[1])
 
 
 @router.get("/overview")
@@ -124,57 +136,24 @@ async def live_overview(location_id: int = Query(1, ge=1)):
         raise HTTPException(404, "Live location not found")
     data = await fetch_weather(location)
     current = data["current"]
-    risk = build_risk(location, current["temperature_2m"], current["relative_humidity_2m"])
-    forecast = make_forecast(data, location)
+    risk = build_environmental_risk(current["temperature_2m"], current["relative_humidity_2m"])
+    forecast = make_forecast(data)
     now = datetime.now(IST).strftime("%Y-%m-%dT%H:%M")
     upcoming = [item for item in forecast if item["timestamp"] >= now]
     peak = max(upcoming[:24] or forecast[:24], key=lambda item: item["final_score"])
-    return {
-        "source": "Open-Meteo",
-        "updated_at": current.get("time"),
-        "timezone": data.get("timezone", "Asia/Kolkata"),
-        "location": location_public(location),
-        "current": {"temperature": current["temperature_2m"], "humidity": current["relative_humidity_2m"], "apparent_temperature": current["apparent_temperature"], "wind_speed": current["wind_speed_10m"], **risk},
-        "peak": peak,
-        "forecast": forecast[:120],
-    }
+    return {"source": "Open-Meteo", "updated_at": current.get("time"), "timezone": data.get("timezone", "Asia/Kolkata"), "location": location_public(location), "current": {"temperature": current["temperature_2m"], "humidity": current["relative_humidity_2m"], "apparent_temperature": current["apparent_temperature"], "wind_speed": current["wind_speed_10m"], **risk}, "peak": peak, "forecast": forecast[:120], "risk_note": "Overall risk is thermal-only because authoritative exposure, vulnerability and infrastructure datasets are not connected yet."}
 
 
 @router.get("/current")
-async def current_location_weather(
-    latitude: float = Query(..., ge=-90, le=90),
-    longitude: float = Query(..., ge=-180, le=180),
-):
-    location = {
-        "name": "Current location",
-        "district": "Current location",
-        "latitude": latitude,
-        "longitude": longitude,
-    }
+async def current_location_weather(latitude: float = Query(..., ge=-90, le=90), longitude: float = Query(..., ge=-180, le=180)):
+    location = {"name": "Current location", "district": "Current location", "latitude": latitude, "longitude": longitude}
     data = await fetch_weather(location, auto_timezone=True)
     current = data["current"]
     risk = build_environmental_risk(current["temperature_2m"], current["relative_humidity_2m"])
-    forecast = make_environmental_forecast(data)
+    forecast = make_forecast(data)
     peak = max(forecast[:24] or forecast, key=lambda item: item["final_score"], default=risk)
-    return {
-        "source": "Open-Meteo",
-        "updated_at": current.get("time"),
-        "timezone": data.get("timezone", "auto"),
-        "location": location_public(location),
-        "current": {
-            "temperature": current["temperature_2m"],
-            "humidity": current["relative_humidity_2m"],
-            "apparent_temperature": current["apparent_temperature"],
-            "wind_speed": current["wind_speed_10m"],
-            **risk,
-            "exposure_score": None,
-            "vulnerability_score": None,
-            "infrastructure_score": None,
-        },
-        "peak": peak,
-        "forecast": forecast[:120],
-        "risk_note": "This location uses live thermal stress only. Municipal exposure, vulnerability and infrastructure scores are not available for an arbitrary GPS coordinate.",
-    }
+    nearest, distance = nearest_facility(latitude, longitude)
+    return {"source": "Open-Meteo", "updated_at": current.get("time"), "timezone": data.get("timezone", "auto"), "location": location_public(location), "current": {"temperature": current["temperature_2m"], "humidity": current["relative_humidity_2m"], "apparent_temperature": current["apparent_temperature"], "wind_speed": current["wind_speed_10m"], **risk}, "peak": peak, "forecast": forecast[:120], "nearest_verified_facility": {"name": nearest["name"], "distance_km": round(distance, 2)}, "risk_note": "This location uses live thermal stress only. No invented municipal exposure, vulnerability or infrastructure score is applied to arbitrary GPS coordinates."}
 
 
 @router.get("/search")
@@ -186,67 +165,36 @@ async def search_locations(query: str = Query(..., min_length=2, max_length=80))
             data = response.json()
     except (httpx.HTTPError, httpx.TimeoutException) as exc:
         raise HTTPException(503, f"Location search unavailable: {exc.__class__.__name__}") from exc
-
     results = []
     for item in data.get("results", []):
-        results.append({
-            "name": item.get("name"),
-            "country": item.get("country"),
-            "country_code": item.get("country_code"),
-            "admin1": item.get("admin1"),
-            "admin2": item.get("admin2"),
-            "latitude": item.get("latitude"),
-            "longitude": item.get("longitude"),
-            "timezone": item.get("timezone"),
-        })
-    return {"query": query, "results": results}
+        results.append({"name": item.get("name"), "country": item.get("country"), "country_code": item.get("country_code"), "admin1": item.get("admin1"), "admin2": item.get("admin2"), "latitude": item.get("latitude"), "longitude": item.get("longitude"), "timezone": item.get("timezone"), "population": item.get("population")})
+    return {"query": query, "results": results, "source": "Open-Meteo Geocoding"}
 
 
 @router.get("/risk-map")
 async def live_risk_map():
+    weather_payloads = await fetch_weather_points(LOCATIONS)
     results = []
-    for location in LOCATIONS:
-        data = await fetch_weather(location)
+    for location, data in zip(LOCATIONS, weather_payloads):
         current = data["current"]
-        results.append({
-            "location": location_public(location),
-            "weather": {"temperature": current["temperature_2m"], "humidity": current["relative_humidity_2m"], "apparent_temperature": current["apparent_temperature"], "wind_speed": current["wind_speed_10m"]},
-            "risk": build_risk(location, current["temperature_2m"], current["relative_humidity_2m"]),
-        })
-    return {"source": "Open-Meteo", "updated_at": datetime.now(IST).isoformat(), "locations": results}
+        results.append({"location": location_public(location), "weather": {"temperature": current["temperature_2m"], "humidity": current["relative_humidity_2m"], "apparent_temperature": current["apparent_temperature"], "wind_speed": current["wind_speed_10m"]}, "risk": build_environmental_risk(current["temperature_2m"], current["relative_humidity_2m"])})
+    return {"source": "Open-Meteo", "updated_at": datetime.now(IST).isoformat(), "risk_basis": "thermal_only", "locations": results}
 
 
 @router.get("/facilities")
 async def live_facilities():
-    risk_map = await live_risk_map()
-    risk_by_id = {item["location"]["id"]: item["risk"]["final_score"] for item in risk_map["locations"]}
-    result = []
-    for facility in FACILITIES:
-        linked = min(LOCATIONS, key=lambda x: (x["latitude"] - facility["latitude"]) ** 2 + (x["longitude"] - facility["longitude"]) ** 2)
-        risk = risk_by_id[linked["id"]]
-        utilization = min(100, max(35, round(42 + risk * 0.45)))
-        occupancy = round(facility["capacity"] * utilization / 100)
-        result.append({**facility, "occupancy": occupancy, "available": facility["capacity"] - occupancy, "status": "full" if occupancy >= facility["capacity"] else "available", "linked_risk": risk})
-    return {"source": "HeatShield live risk model", "updated_at": datetime.now(IST).isoformat(), "facilities": result}
+    return {"source": "Delhi 2026 heat-relief operation records", "updated_at": datetime.now(IST).isoformat(), "status_note": "Facility identity is verified from public 2026 heat-relief reporting. Live occupancy/open-closed status is not publicly exposed by the source, so HeatShield does not invent it.", "facilities": FACILITIES}
 
 
 @router.get("/alerts")
 async def live_alerts():
     overview = await live_overview(1)
     current = overview["current"]
-    alerts = []
-    if current["final_score"] >= 80:
-        severity = "extreme"
-    elif current["final_score"] >= 60:
-        severity = "high"
-    elif current["final_score"] >= 35:
-        severity = "moderate"
-    else:
-        severity = "low"
-    alerts.append({"id": "live-1", "severity": severity, "active": True, "created_at": overview["updated_at"], "location": overview["location"]["name"], "message": f"Live heat risk is {severity} in {overview['location']['name']} with a composite score of {current['final_score']}/100."})
+    severity = risk_level(current["final_score"])
+    alerts = [{"id": "live-thermal-1", "severity": severity, "active": True, "created_at": overview["updated_at"], "location": overview["location"]["name"], "message": f"Live thermal risk is {severity} in {overview['location']['name']} with a thermal score of {current['final_score']}/100.", "source": "Open-Meteo + HeatShield thermal model"}]
     peak = overview["peak"]
-    alerts.append({"id": "peak-1", "severity": risk_level(peak["final_score"]), "active": True, "created_at": peak["timestamp"], "location": overview["location"]["name"], "message": f"Forecast peak risk reaches {peak['final_score']}/100 at {peak['timestamp']} IST."})
-    return {"source": "Open-Meteo + HeatShield model", "alerts": alerts}
+    alerts.append({"id": "peak-thermal-1", "severity": risk_level(peak["final_score"]), "active": True, "created_at": peak["timestamp"], "location": overview["location"]["name"], "message": f"Forecast thermal peak reaches {peak['final_score']}/100 at {peak['timestamp']} IST.", "source": "Open-Meteo + HeatShield thermal model"})
+    return {"source": "Open-Meteo + HeatShield thermal model", "alerts": alerts}
 
 
 @router.get("/responders")
@@ -256,8 +204,9 @@ async def live_responders():
     priorities = []
     for rank, item in enumerate(ranked, 1):
         score = item["risk"]["final_score"]
-        priorities.append({"priority": rank, "location": item["location"], "score": score, "risk_level": item["risk"]["risk_level"], "action": "Immediate field dispatch" if score >= 70 else "Stage response team" if score >= 50 else "Routine monitoring"})
-    return {"source": "Open-Meteo + HeatShield model", "updated_at": datetime.now(IST).isoformat(), "priorities": priorities}
+        action = "Immediate thermal-risk review" if score >= 70 else "Stage response team" if score >= 50 else "Routine monitoring"
+        priorities.append({"priority": rank, "location": item["location"], "score": score, "risk_level": item["risk"]["risk_level"], "action": action, "basis": "live thermal stress only", "operational_note": "HeatShield recommendation only; not a live dispatch order."})
+    return {"source": "Open-Meteo + HeatShield thermal model", "updated_at": datetime.now(IST).isoformat(), "priorities": priorities}
 
 
 @router.get("/interventions")
@@ -267,10 +216,9 @@ async def live_interventions(location_id: int = Query(1, ge=1), shade: bool = Fa
         raise HTTPException(404, "Live location not found")
     data = await fetch_weather(location)
     current = data["current"]
-    base = build_risk(location, current["temperature_2m"], current["relative_humidity_2m"])
-    reduction = (8 if shade else 0) + (6 if water else 0) + (12 if cooling else 0)
-    projected = round(max(0, base["final_score"] - reduction), 1)
-    return {"location": location_public(location), "baseline": base, "interventions": {"shade": shade, "water": water, "cooling": cooling}, "projected_score": projected, "projected_level": risk_level(projected), "estimated_reduction": round(base["final_score"] - projected, 1)}
+    baseline = build_environmental_risk(current["temperature_2m"], current["relative_humidity_2m"])
+    selected = [name for name, enabled in (("shade", shade), ("water", water), ("cooling", cooling)) if enabled]
+    return {"location": location_public(location), "baseline": baseline, "interventions": {"shade": shade, "water": water, "cooling": cooling}, "selected_interventions": selected, "projected_score": None, "projected_level": None, "estimated_reduction": None, "simulation_status": "not_calibrated", "simulation_note": "HeatShield will not invent temperature/risk reductions for interventions. A calibrated intervention dataset is required before projected impacts can be reported."}
 
 
 @router.get("/locations")
