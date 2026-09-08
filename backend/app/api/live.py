@@ -13,9 +13,9 @@ IST = ZoneInfo("Asia/Kolkata")
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 
-# Real Delhi geographic reference points. No invented social/infrastructure
-# scores are attached; until authoritative spatial datasets are connected,
-# HeatShield reports thermal risk only.
+
+
+
 LOCATIONS = [
     {"id": 1, "name": "Central Delhi", "district": "Central Delhi", "latitude": 28.6448, "longitude": 77.2167, "location_type": "weather_reference_point"},
     {"id": 2, "name": "South Delhi", "district": "South Delhi", "latitude": 28.5244, "longitude": 77.1855, "location_type": "weather_reference_point"},
@@ -24,10 +24,10 @@ LOCATIONS = [
     {"id": 5, "name": "North Delhi", "district": "North Delhi", "latitude": 28.7041, "longitude": 77.1025, "location_type": "weather_reference_point"},
 ]
 
-# Real fixed cooling zones publicly reported during Delhi's 2026 heat-relief
-# operation. Delhi Government reporting states cooling zones provide seating
-# for 100 people. Occupancy/open-closed status is not published as a live feed,
-# so HeatShield does not fabricate it.
+
+
+
+
 FACILITIES = [
     {"id": 1, "name": "Cooling Zone — GTB Hospital Gate 3", "type": "cooling_zone", "latitude": 28.6883, "longitude": 77.3090, "capacity": 100, "occupancy": None, "status": "publicly_reported_live_status_unavailable", "verification_date": "2026-06-09", "source": "Delhi Government 2026 heat-relief reporting", "source_url": "https://rekhagupta.in/governance"},
     {"id": 2, "name": "Cooling Zone — Jama Masjid Metro Gate 3", "type": "cooling_zone", "latitude": 28.6508, "longitude": 77.2335, "capacity": 100, "occupancy": None, "status": "publicly_reported_live_status_unavailable", "verification_date": "2026-06-09", "source": "Delhi Government 2026 heat-relief reporting", "source_url": "https://rekhagupta.in/governance"},

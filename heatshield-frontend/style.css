@@ -23,7 +23,7 @@
   display: none;
 }
 
-/* Smooth transitions for page content */
+
 #app-content {
   animation: fadeIn 0.15s ease-out;
 }
@@ -33,7 +33,7 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Initial route loading state */
+
 .heatshield-page-loading {
   min-height: 18rem;
   display: flex;
@@ -44,7 +44,7 @@
   font-size: 0.875rem;
 }
 
-/* Dashboard visual polish */
+
 #heatshield-live-panel {
   padding-top: 0.25rem;
 }
@@ -102,7 +102,7 @@
   border-color: rgba(239, 68, 68, 0.25);
 }
 
-/* Compact, professional metric cards */
+
 #live-dashboard-content .metric-card {
   min-height: 7rem;
 }
@@ -127,7 +127,7 @@
   background: rgba(13, 116, 119, 0.035);
 }
 
-/* Range slider styling */
+
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
@@ -159,7 +159,7 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 1px 4px rgba(0,0,0,0.15);
 }
 
-/* Checkbox styling */
+
 input[type="checkbox"] {
   accent-color: #005a5c;
 }

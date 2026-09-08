@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.db.database import Base, engine, SessionLocal
-from app.models import models  # noqa: F401
+from app.models import models  
 from app.models.models import Location
 from app.api.weather import router as weather_router
 from app.api.risk import router as risk_router
@@ -59,8 +59,8 @@ def prepare_database():
         connection.execute(text("ALTER TABLE facilities ALTER COLUMN capacity DROP NOT NULL"))
         connection.execute(text("ALTER TABLE facilities ALTER COLUMN occupancy DROP NOT NULL"))
 
-        # Remove records created by the former synthetic MVP seed. New records
-        # are explicitly tagged with their real source and are never deleted.
+        
+        
         connection.execute(text("DELETE FROM weather WHERE data_source = 'legacy_unverified'"))
         connection.execute(text("DELETE FROM risk_scores WHERE data_source = 'legacy_unverified'"))
         connection.execute(text("DELETE FROM facilities WHERE data_source = 'legacy_unverified'"))

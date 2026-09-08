@@ -191,7 +191,7 @@ export async function loadLiveDashboard(locationId = 1) {
       facilities = await apiGet('/api/live/facilities');
       alerts = await apiGet('/api/live/alerts');
     } catch (_) {
-      // Facilities/alerts are auxiliary; don't fail the whole dashboard if they fail.
+      
       if (cache && cache.data) {
         facilities = facilities || cache.data.facilities || null;
         alerts = alerts || cache.data.alerts || null;
@@ -231,7 +231,7 @@ function renderDashboardLive(overview, facilities, alerts, isOffline = false) {
   const riskLevel = String(current.risk_level || '').toLowerCase();
   const peakRiskLevel = String(peak.risk_level || '').toLowerCase();
 
-  // Determine main driver from backend data
+  
   const scores = [
     { label: 'thermal stress', value: Number(current.thermal_score) || 0 },
     { label: 'population exposure', value: Number(current.exposure_score) || 0 },
@@ -241,7 +241,7 @@ function renderDashboardLive(overview, facilities, alerts, isOffline = false) {
   scores.sort((a, b) => b.value - a.value);
   const mainDriver = scores.length ? scores[0].label : 'thermal stress';
 
-  // Build forecast table
+  
   const forecastRows = forecast.slice(0, 36).map(item => `
     <tr class="border-t border-surface-container-high">
       <td class="py-2 font-label-sm whitespace-nowrap">${formatDateShort(item.timestamp)}</td>
@@ -252,7 +252,7 @@ function renderDashboardLive(overview, facilities, alerts, isOffline = false) {
       <td class="py-2">${riskBadgeSafe(item.risk_level)}</td>
     </tr>`).join('');
 
-  // Build facilities
+  
   const facilityCards = facilities && facilities.facilities && facilities.facilities.length
     ? facilities.facilities.map(item => {
         const occupancy = Number(item.occupancy) || 0;
@@ -274,7 +274,7 @@ function renderDashboardLive(overview, facilities, alerts, isOffline = false) {
       }).join('')
     : '<div class="text-sm text-on-surface-variant">Facility data unavailable.</div>';
 
-  // Build alerts
+  
   const alertRows = alerts && alerts.alerts && alerts.alerts.length
     ? alerts.alerts.map(item => `
         <div class="p-3 rounded-lg ${riskClassSafe(item.severity)}">

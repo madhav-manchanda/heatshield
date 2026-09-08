@@ -23,7 +23,7 @@ def heat_index_celsius(temperature_c: float, humidity: float) -> float:
 
 def thermal_score(heat_index_c: float) -> float:
     """Normalize heat index into a 0-100 thermal-stress score."""
-    # Reference range used by this MVP: 27C (low) to 54C (very extreme).
+    
     score = (heat_index_c - 27) / (54 - 27) * 100
     return round(max(0, min(100, score)), 1)
 
